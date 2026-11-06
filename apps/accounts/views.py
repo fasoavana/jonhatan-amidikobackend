@@ -13,7 +13,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.views import TokenRefreshView
 
 
-from .permissions import IsAdmin, IsAdminOrModerator
+from .permissions import IsAdmin, IsAdminOrModerator, IsModerator
 #from .serializers import RegisterSerializer, LoginSerializer, AdminUserSerializer, AdminUserStatusSerializer
 from .serializers import (
     RegisterSerializer,
@@ -22,6 +22,7 @@ from .serializers import (
     AdminUserStatusSerializer,
     CustomTokenRefreshSerializer,
     AdminUserRoleSerializer,
+    UpdateProfileSerializer,
 )
 
 from .choices import UserRole, UserStatus
@@ -41,6 +42,25 @@ class RegisterView(generics.CreateAPIView):
     serializer_class = RegisterSerializer
     permission_classes = [permissions.AllowAny]
 
+#############################################
+#ancienne vue pour la liste des informations de l'utilisateur
+#class MeView(APIView):
+#    permission_classes = [permissions.IsAuthenticated]
+#
+#    def get(self, request):
+#        user = request.user
+#
+#        return Response({
+#            "id": user.id,
+#            "first_name": user.first_name,
+#            "last_name": user.last_name,
+#            "email": user.email,
+#            "phone": user.phone,
+#            "role": user.role,
+#            "status": user.status,
+#        })
+#########################################
+# Nouvelle vue de la midification des informations de l'utilisateur
 class MeView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -57,6 +77,32 @@ class MeView(APIView):
             "status": user.status,
         })
 
+    def patch(self, request):
+        serializer = UpdateProfileSerializer(
+            request.user,
+            data=request.data,
+            partial=True,
+        )
+
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        user = request.user
+
+        return Response({
+            "message": "Profil mis à jour avec succès.",
+            "user": {
+                "id": user.id,
+                "first_name": user.first_name,
+                "last_name": user.last_name,
+                "email": user.email,
+                "phone": user.phone,
+                "role": user.role,
+                "status": user.status,
+            },
+        }, status=200)
+
+
 class LoginView(TokenObtainPairView):
     serializer_class = LoginSerializer
     permission_classes = [permissions.AllowAny]
@@ -65,7 +111,7 @@ class LoginView(TokenObtainPairView):
 class AdminUserListView(generics.ListAPIView):
     serializer_class = AdminUserSerializer
     #permission_classes = [IsAdmin]
-    #permission_classes = [IsAdminOrModerator]
+    permission_classes = [IsAdminOrModerator]
 
     def get_queryset(self):
         return User.objects.all().order_by("-created_at")
@@ -75,33 +121,93 @@ class AdminUserDetailView(generics.RetrieveAPIView):
     queryset = User.objects.all()
     serializer_class = AdminUserSerializer
     permission_classes = [IsAdmin]
-
+##########################################################################################
 # Mijery status an user (active, suspended, delete) côté admin
 # Change le status des utilisateurs 
+#class AdminUserStatusView(generics.UpdateAPIView):
+#    queryset = User.objects.all()
+#    serializer_class = AdminUserStatusSerializer
+#    permission_classes = [IsAdmin]
+#    #permission_classes = [IsAdminOrModerator]
+#
+#    def update(self, request, *args, **kwargs):
+#        user = self.get_object()
+#
+#        serializer = self.get_serializer(data=request.data)
+#        serializer.is_valid(raise_exception=True)
+#
+#        new_status = serializer.validated_data["status"]
+#
+#        user.status = new_status
+#
+#        if new_status == "active":
+#            user.is_active = True
+#        elif new_status == "suspended":
+#            user.is_active = True
+#        elif new_status == "deleted":
+#            user.is_active = False
+#
+#        user.save()
+#
+#        return Response({
+#            "message": "Statut de l'utilisateur mis à jour.",
+#            "user": AdminUserSerializer(user).data,
+#        })
+###########################################################################################
+# Réactiver un administrateur : autorisé.
+# Suspendre ou supprimer un autre administrateur : autorisé s'il en reste au moins un autre actif.
+# Suspendre ou supprimer le dernier administrateur actif : refusé.
+# Modifier le statut d'un utilisateur ou d'un modérateur : comportement inchangé.
 class AdminUserStatusView(generics.UpdateAPIView):
     queryset = User.objects.all()
     serializer_class = AdminUserStatusSerializer
     permission_classes = [IsAdmin]
-    #permission_classes = [IsAdminOrModerator]
 
     def update(self, request, *args, **kwargs):
-        user = self.get_object()
-
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         new_status = serializer.validated_data["status"]
 
-        user.status = new_status
+        with transaction.atomic():
 
-        if new_status == "active":
-            user.is_active = True
-        elif new_status == "suspended":
-            user.is_active = True
-        elif new_status == "deleted":
-            user.is_active = False
+            # Verrouiller les administrateurs actifs pendant la vérification.
+            active_admin_ids = list(
+                User.objects.select_for_update()
+                .filter(
+                    role=UserRole.ADMIN,
+                    status=UserStatus.ACTIVE,
+                    is_active=True,
+                )
+                .values_list("id", flat=True)
+            )
 
-        user.save()
+            user = self.get_object()
+
+            # Empêcher la désactivation du dernier administrateur actif.
+            if (
+                user.id in active_admin_ids
+                and new_status != UserStatus.ACTIVE
+                and len(active_admin_ids) <= 1
+            ):
+                return Response(
+                    {
+                        "detail": (
+                            "Impossible de suspendre ou supprimer "
+                            "le dernier administrateur actif."
+                        )
+                    },
+                    status=400,
+                )
+
+            user.status = new_status
+
+            if new_status in [UserStatus.ACTIVE, UserStatus.SUSPENDED]:
+                user.is_active = True
+            elif new_status == UserStatus.DELETED:
+                user.is_active = False
+
+            user.save()
 
         return Response({
             "message": "Statut de l'utilisateur mis à jour.",

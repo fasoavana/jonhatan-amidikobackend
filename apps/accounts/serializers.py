@@ -164,3 +164,59 @@ class AdminUserRoleSerializer(serializers.Serializer):
     role = serializers.ChoiceField(
         choices=UserRole.choices
     )
+
+
+
+################### modifications des informations des utilisateurs
+class UpdateProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = [
+            "first_name",
+            "last_name",
+            "phone",
+        ]
+
+    def validate_first_name(self, value):
+        value = value.strip()
+
+        if not value:
+            raise serializers.ValidationError(
+                "Le prénom ne peut pas être vide."
+            )
+
+        return value
+
+    def validate_last_name(self, value):
+        value = value.strip()
+
+        if not value:
+            raise serializers.ValidationError(
+                "Le nom ne peut pas être vide."
+            )
+
+        return value
+
+    def validate_phone(self, value):
+        value = value.strip()
+
+        if not value:
+            raise serializers.ValidationError(
+                "Le numéro de téléphone ne peut pas être vide."
+            )
+
+        return value
+
+    def validate(self, attrs):
+        allowed_fields = set(self.fields.keys())
+        submitted_fields = set(self.initial_data.keys())
+
+        forbidden_fields = submitted_fields - allowed_fields
+
+        if forbidden_fields:
+            raise serializers.ValidationError({
+                field: "Ce champ ne peut pas être modifié ici."
+                for field in forbidden_fields
+            })
+
+        return attrs

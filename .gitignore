@@ -7,3 +7,5 @@ __pycache__/
 .vscode/
 media/
 staticfiles/
+.env.exemple
+db.sqlite3

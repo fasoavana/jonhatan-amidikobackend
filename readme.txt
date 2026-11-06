@@ -38,3 +38,24 @@ Modifier le statut d'un utilisateur				Validé
 Admin modifie le rôle d'un autre utilisateur	200 OK		Validé
 Moderator tente de modifier un rôle	403 Forbidden		Validé
 Admin tente de modifier son propre rôle	400 Bad Request		Validé
+
+
+
+Consulter la liste des utilisateurs	200 OK			Validé
+Modifier le statut d'un utilisateur	403 Forbidden		Validé
+Modifier le rôle d'un utilisateur	403 Forbidden		Validé
+
+
+
+Consulter son profil (GET)	200 OK				Validé
+Modifier son profil (PATCH)	200 OK				Validé
+Modifier son rôle via /me/	400 — Bloqué			Validé
+Modifier son statut via /me/	Protection prévue par le serializer	Validé
+
+
+Consulter son profil						Validé
+Modifier son prénom						Validé
+Modifier son nom						Validé
+Modifier son téléphone						Validé
+Modifier son rôle	Bloqué 					Validé
+Modifier son statut	Bloqué 					Validé
